@@ -6,7 +6,6 @@
  */
 
 #include "WitModule.h"
-#include "Curl/CurlHttpManager.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/EngineVersionComparison.h"
 #include "Modules/ModuleInterface.h"
@@ -29,13 +28,7 @@ void FWitModule::StartupModule()
 {
 	Singleton = this;
 	
-	if (HttpManager == nullptr)
-	{
-		FCurlHttpManager::InitCurl();
-
-		HttpManager = new FCurlHttpManager();
-		HttpManager->UpdateConfigs();
-	}
+	/* We dont need Initialize FCurlHttpManager since we dont have access to it anymore */
 
 	// find version code
 	IPluginManager& PluginManager = IPluginManager::Get();
@@ -56,17 +49,7 @@ void FWitModule::StartupModule()
  */
 void FWitModule::ShutdownModule()
 {
-	if (HttpManager != nullptr)
-	{
-#if UE_VERSION_OLDER_THAN(5,0,0)
-		HttpManager->Flush(true);
-#else
-		HttpManager->Flush(EHttpFlushReason::Shutdown);
-#endif
-		delete HttpManager;
-	}
-	
-	HttpManager = nullptr;
+
 	Singleton = nullptr;
 }
 

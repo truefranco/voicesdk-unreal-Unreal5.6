@@ -51,12 +51,10 @@ void UWitRequestSubsystem::BeginStreamRequest(const FWitRequestConfiguration& Re
 	LastResponseSize = 0;
 	bHasConfiguration = true;
 
-	// When streaming we start the request immediately. Data will be passed to the server as it becomes available
-	
-	if (RequestConfiguration.bShouldUseChunkedTransfer)
-	{
-		SendRequest();
-	}
+	bIsRequestStreaming = RequestConfiguration.bShouldUseChunkedTransfer;
+
+	// With the new implementation, we no longer send the request immediately for streaming.
+	// Instead, we wait for EndStreamRequest to be called, which happens after all audio is captured.
 }
 
 /**
@@ -66,16 +64,13 @@ void UWitRequestSubsystem::BeginStreamRequest(const FWitRequestConfiguration& Re
 void UWitRequestSubsystem::EndStreamRequest()
 {
 	MemoryReader->Close();
+
+	if (bIsRequestStreaming)
+	{
+		bIsRequestStreaming = false;
+	}
 	
-	if (Configuration.bShouldUseChunkedTransfer)
-	{
-		const TSharedPtr<FWitHttpRequest, ESPMode::ThreadSafe> StreamRequest = StaticCastSharedPtr<FWitHttpRequest, IHttpRequest>(HttpRequest);
-		StreamRequest->CloseStreamRequest();
-	}
-	else
-	{
-		SendRequest();
-	}
+	SendRequest();
 }
 
 /**
@@ -95,9 +90,9 @@ void UWitRequestSubsystem::SendRequest()
 		return;
 	}
 
-	// If we are using streaming then we use our custom HTTP request otherwise we fallback to UE4's standard HTTP request
+	// Create our custom request wrapper. This allows us to add custom logic and headers
 
-	HttpRequest = TSharedRef<IHttpRequest, ESPMode::ThreadSafe>(dynamic_cast<IHttpRequest*>(new FWitHttpRequest()));
+	HttpRequest = MakeShared<FWitHttpRequest>();
 
 	// Construct the final URL for the request
 	
@@ -166,15 +161,19 @@ void UWitRequestSubsystem::SendRequest()
 		HttpRequest->SetHeader("Transfer-Encoding", TEXT("chunked"));
 	}
 
-	// Add body content. This can be either streamed or fixed depending on the endpoint
-	
-	HttpRequest->SetContentFromStream(MemoryReader.ToSharedRef());
+	// Add body content. With the new implementation, we always set the content directly. The old streaming
+	// implementation is no longer supported by the public HTTP interface.
+
+	if (Configuration.bShouldUseChunkedTransfer || ContentStream.Num() > 0)
+	{
+		static_cast<FWitHttpRequest*>(HttpRequest.Get())->SetContentFromStream(MemoryReader.ToSharedRef());
+	}
 
 	// Setup callbacks to inform of request progress and request completion
 #if UE_VERSION_OLDER_THAN(5, 4, 0)
 	HttpRequest->OnRequestProgress().BindUObject(this, &UWitRequestSubsystem::OnRequestProgress);
 #else
-    HttpRequest->OnRequestProgress64().BindUObject(this, &UWitRequestSubsystem::OnRequestProgress);
+	HttpRequest->OnRequestProgress64().BindUObject(this, &UWitRequestSubsystem::OnRequestProgress);
 #endif
 	HttpRequest->OnProcessRequestComplete().BindUObject(this, &UWitRequestSubsystem::OnRequestComplete);
 
@@ -278,9 +277,11 @@ void UWitRequestSubsystem::CancelRequest()
  *
  * @return true if a request is in progress
  */
+ 
 bool UWitRequestSubsystem::IsRequestInProgress() const
 {
-	return HttpRequest != nullptr;
+	const bool bIsHttpRequestInProgress = HttpRequest.IsValid() && (HttpRequest->GetStatus() == EHttpRequestStatus::Processing);
+	return bIsHttpRequestInProgress || bIsRequestStreaming;
 }
 
 /**
@@ -302,7 +303,13 @@ void UWitRequestSubsystem::OnRequestProgress(FHttpRequestPtr Request, uint64 Byt
 		return;	
 	}
 	
-	const TArray<uint8>& ContentAsBytes(Request->GetResponse()->GetContent());
+	    const FHttpResponsePtr Response = Request->GetResponse();
+	if (!Response.IsValid())
+	{
+		return;
+	}
+	
+	const TArray<uint8>& ContentAsBytes(Response->GetContent());
 	const bool bIsNewResponseData = ContentAsBytes.Num() != LastResponseSize;
 
 	if (!bIsNewResponseData)
@@ -369,6 +376,7 @@ void UWitRequestSubsystem::OnRequestProgress(FHttpRequestPtr Request, uint64 Byt
  */
 void UWitRequestSubsystem::OnRequestComplete(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bIsSuccessful)
 {
+	bIsRequestStreaming = false;
 	HttpRequest = nullptr;
 	
 	if (!bIsSuccessful)

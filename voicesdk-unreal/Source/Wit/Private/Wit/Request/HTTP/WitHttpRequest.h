@@ -7,87 +7,98 @@
 
 #pragma once
 
-#if WITH_CURL
-
 #include "CoreMinimal.h"
-#include "Curl/CurlHttp.h"
+#include "Interfaces/IHttpRequest.h"
+#include "Interfaces/IHttpResponse.h"
 
 class FWitHttpResponse;
 
 /**
- * Extend and modify Unreal's default Curl request to support chunked transfers
+ * A custom Wit.ai Http request that wraps a real engine http request to support chunked transfers
  */
-class FWitHttpRequest : public FCurlHttpRequest
+
+ /* No longer inherit from FCurlHttpRequest , so we need to declare all virtual functions from the interface IHttpRequest
+  if not we get Abstract function errors */
+
+class FWitHttpRequest : public IHttpRequest
 {
 public:
-
-	friend class FWitHttpResponse;
 
 	/**
 	 * Constructor
 	 */
-	FWitHttpRequest() = default;
+	FWitHttpRequest();
 
 	/**
-	 * Destructor. Clean up any connection/request handles
+	 * Destructor.
 	 */
 	virtual ~FWitHttpRequest() override;
 
-	/**
-	 * IHttpRequest overrides
-	 */
-	virtual bool SetContentFromStream(TSharedRef<FArchive, ESPMode::ThreadSafe> Stream) override;
-	virtual void Tick(float DeltaSeconds) override;
+	//~ Begin IHttpBase Interface
+	virtual const FString& GetURL() const override;
+	virtual FString GetURLParameter(const FString& ParameterName) const override;
+	virtual FString GetHeader(const FString& HeaderName) const override;
+	virtual TArray<FString> GetAllHeaders() const override;
+	virtual FString GetContentType() const override;
+	virtual uint64 GetContentLength() const override;
+	virtual const TArray<uint8>& GetContent() const override;
+	//~ End IHttpBase Interface
 
-	/**
-	 * IHttpRequestThreaded overrides
-	 */
-	virtual bool StartThreadedRequest() override;
+	//~ Begin IHttpRequest Interface
+	virtual FString GetVerb() const override;
+	virtual void SetVerb(const FString& Verb) override;
+	virtual void SetURL(const FString& URL) override;
+	virtual void SetContent(const TArray<uint8>& ContentPayload) override;
+	virtual void SetContent(TArray<uint8>&& ContentPayload) override;
+	virtual void SetContentAsString(const FString& ContentString) override;
 	
-	/**
-	 * Manually close a stream request and indicate it has ended
-	 */
-	void CloseStreamRequest();
-
-	/**
-	 * Setup any request overrides
-	 */
-	void SetupRequestOverrides();
-
-	/**
-	 * Replacement static upload callback to be used as a read function in curl
-	 */
-	static size_t StaticStreamUploadCallback(void* Ptr, size_t SizeInBlocks, size_t BlockSizeInBytes, void* UserData);
-
-	/**
-	 * Replacement upload callback called from the static upload callback
-	 */
-	size_t StreamUploadCallback(void* Ptr, size_t SizeInBlocks, size_t BlockSizeInBytes);
+	virtual bool SetContentAsStreamedFile(const FString& Filename) override;
+	virtual bool SetResponseBodyReceiveStream(TSharedRef<FArchive> Stream) override;
+	virtual void SetHeader(const FString& HeaderName, const FString& HeaderValue) override;
+	virtual void AppendToHeader(const FString& HeaderName, const FString& AdditionalHeaderValue) override;
+	virtual void SetOption(const FName Option, const FString& OptionValue) override;
+	virtual void SetTimeout(float InTimeoutSecs) override;
+	virtual void ClearTimeout() override;
+	virtual TOptional<float> GetTimeout() const override;
+	virtual void SetActivityTimeout(float InTimeoutSecs) override;
+	virtual void ResetTimeoutStatus() override;
+	virtual bool ProcessRequest() override;
+	virtual FHttpRequestCompleteDelegate& OnProcessRequestComplete() override;
+	
+	virtual FHttpRequestProgressDelegate64& OnRequestProgress64() override;
+	virtual FHttpRequestHeaderReceivedDelegate& OnHeaderReceived() override;
+	virtual FHttpRequestWillRetryDelegate& OnRequestWillRetry() override;
+	virtual FHttpRequestStatusCodeReceivedDelegate& OnStatusCodeReceived() override;
+	virtual void CancelRequest() override;
+	virtual EHttpRequestStatus::Type GetStatus() const override;
+	virtual const FHttpResponsePtr GetResponse() const override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual float GetElapsedTime() const override;
+	virtual FString GetOption(const FName Option) const override;
+	virtual void SetDelegateThreadPolicy(EHttpRequestDelegateThreadPolicy InThreadPolicy) override;
+	virtual EHttpRequestDelegateThreadPolicy GetDelegateThreadPolicy() const override;
+	virtual void ProcessRequestUntilComplete() override;
+	virtual const FString& GetEffectiveURL() const override;
+	virtual EHttpFailureReason GetFailureReason() const override;
+	//~ End IHttpRequest Interface
 
 	/*
 	 * User agent for Wit
 	 */
 	static FString GetUserAgent();
 
+	/**
+	 * Sets the request content from a FArchive stream. This will read the entire stream into a buffer and send it.
+	 * This is intended for use with chunked transfer encoding.
+	 *
+	 * @param Stream The stream to read the content from.
+	 * @return True if the content was set successfully.
+	 */
+	bool SetContentFromStream(TSharedRef<FArchive, ESPMode::ThreadSafe> Stream);
+
 private:
 
-	/** Strip the content length header */
-	void StripContentLengthHeader();
-	
-	/** Has the request been paused? */
-	bool IsPaused{ false };
+	/** The real Http request that this class is wrapping */
+	FHttpRequestPtr RealRequest;
 
-	/** Has the request ended? */
-	bool IsEnded{ false };
-
-	/** The payload we want to stream with the request */
-	TUniquePtr<FRequestPayload> StreamPayload;
-
-	/** Count of bytes that we have streamed so far */
-	FThreadSafeCounter StreamBytesSent;
-
-	/** List of custom headers to be passed to CURL */
-	curl_slist*	StreamHeaderList{nullptr};
 };
-
-#endif

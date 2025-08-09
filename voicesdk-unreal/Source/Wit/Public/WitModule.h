@@ -10,8 +10,6 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
 
-class FHttpManager;
-
 /**
  * The module for the UE4 plugin implementation of the Wit API
  */
@@ -43,21 +41,10 @@ public:
 	 */
 	WIT_API static FWitModule& Get();
 
-	/**
-	 * Only meant to be used by Http request/response implementations
-	 *
-	 * @return http request manager used by the module
-	 */
-	FHttpManager& GetHttpManager() const
-	{
-		check(HttpManager != nullptr);
-		return *HttpManager;
-	}
 
 private:
 
-	/** Keeps track of Http requests while they are being processed */
-	FHttpManager* HttpManager{nullptr};
+
 
 	/** Wit API version */
 	FString Version;

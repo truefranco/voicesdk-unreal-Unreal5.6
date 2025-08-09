@@ -41,13 +41,6 @@ public class Wit : ModuleRules
 			}
 		);
 
-		PrivateIncludePaths.AddRange(
-			new string[]
-			{
-				Path.Combine(EngineDirectory, "Source/Runtime/Online/HTTP/Private")
-			}
-		);
-
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{

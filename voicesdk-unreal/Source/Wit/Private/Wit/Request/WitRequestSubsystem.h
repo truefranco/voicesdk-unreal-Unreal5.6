@@ -71,6 +71,10 @@ public:
 	 */
 	bool IsRequestInProgress() const;
 
+	/** Is the request a streaming request? */
+	UPROPERTY(VisibleAnywhere, Category="Wit|Private")
+	bool bIsRequestStreaming{false};
+
 	/**
 	 * Writes the given binary data to the internal stream that the request is using
 	 *
